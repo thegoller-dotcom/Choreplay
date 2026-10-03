@@ -29,10 +29,25 @@ button,input,select,textarea{font:inherit}.hide{display:none!important}.app{max-
   <div class="tagline" style="font-size:15px">Chore. Vote. Play.</div>
   <h2>Good chores. Better company.</h2>
   <p class="muted">Do the thing. Let your friends decide what it deserves.</p>
-  <div class="card stack">
-    <input id="email" class="field" type="email" placeholder="you@example.com">
-    <button id="magic" class="btn primary">Send sign-in link</button>
-    <div id="authmsg" class="muted">No password needed.</div>
+
+  <div id="emailStep" class="card stack">
+    <input id="email" class="field" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com">
+    <button id="sendOtp" class="btn primary">Email me a sign-in code</button>
+    <div id="authmsg" class="muted">No password needed. We’ll send a 6-digit code.</div>
+  </div>
+
+  <div id="codeStep" class="card stack hide">
+    <div>
+      <b>Check your email</b>
+      <div id="codeSentTo" class="muted" style="margin-top:4px"></div>
+    </div>
+    <input id="otp" class="field" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="6-digit code" style="text-align:center;font-size:24px;font-weight:800;letter-spacing:.18em">
+    <button id="verifyOtp" class="btn primary">Sign in</button>
+    <div class="row">
+      <button id="resendOtp" type="button" class="btn grow">Send another code</button>
+      <button id="changeEmail" type="button" class="btn grow">Change email</button>
+    </div>
+    <div id="codemsg" class="muted">Enter the code from the newest ChorePlay email.</div>
   </div>
 </main>
 
@@ -180,7 +195,7 @@ function notifyClosedChores(){if(!S.u||!S.g)return;S.cs.filter(c=>status(c)==='C
 function applyRequestedTab(){let u=new URL(location.href),t=u.searchParams.get('tab');if(!['home','vote','past','group'].includes(t))return;showTab(t);if(t==='vote'||t==='past')void markSeen(t);u.searchParams.delete('tab');history.replaceState(null,'',u.pathname+(u.search?u.search:''))}
 function renderGroupManager(){let host=$('#groupList');if(!host)return;$('#groupCount').textContent=S.gs.length+(S.gs.length===1?' group':' groups');host.innerHTML=S.gs.length?S.gs.map(g=>{let current=S.g&&g.id===S.g.id,count=S.groupCounts[g.id],expanded=current&&S.groupExpanded;return'<div class="item group-card '+(current?'current':'')+'" data-group-card="'+g.id+'"><div class="row"><div class="grow"><h3>'+esc(g.name)+'</h3><div class="muted">'+(count!=null?count+' people · ':'')+esc(g.role||'member')+'</div></div>'+(current?'<span class="pill current-pill">Current</span>':'')+'</div>'+(current?'<div class="switch-hint">'+(expanded?'Tap group header to collapse':'Tap to manage current group')+'</div>':'<div class="switch-hint">Tap to switch</div>')+(expanded?'<div class="group-card-details"><div><div class="muted" style="margin-bottom:6px">Invite code</div><div class="code">'+esc(g.invite_code)+'</div></div><button type="button" class="btn primary" data-copy-group="'+g.id+'">Copy invite code</button><div><div class="section" style="margin-top:4px"><b>The Crew</b><span class="muted">'+S.ms.length+' people</span></div><div class="stack">'+S.ms.map(m=>'<div class="item row"><div class="avatar">'+ini(m.profiles?.display_name)+'</div><div><b>'+esc(m.profiles?.display_name||'Member')+'</b><div class="muted">'+(m.profiles?.partner_name?'with '+esc(m.profiles.partner_name)+' · ':'')+esc(m.role)+'</div></div></div>').join('')+'</div></div></div>':'')+'</div>'}).join(''):'<div class="item muted">No groups yet.</div>'}
 async function boot(){await registerServiceWorker();let{data:{session}}=await sb.auth.getSession();await sess(session);sb.auth.onAuthStateChange((_,s)=>sess(s));setInterval(updateCountdowns,1000)}
-async function sess(s){S.u=s?.user||null;$('#auth').classList.toggle('hide',!!S.u);$('#main').classList.toggle('hide',!S.u);if(!S.u){$('#nav').classList.add('hide');return}await load()}
+async function sess(s){S.u=s?.user||null;$('#auth').classList.toggle('hide',!!S.u);$('#main').classList.toggle('hide',!S.u);if(!S.u){$('#nav').classList.add('hide');if(!pendingAuthEmail)showEmailStep();return}pendingAuthEmail='';await load()}
 async function load(){let[{data:p,error:e1},{data:mm,error:e2}]=await Promise.all([sb.from('profiles').select('*').eq('id',S.u.id).single(),sb.from('group_members').select('group_id,role,groups(id,name,invite_code,created_by)').eq('user_id',S.u.id)]);if(e1||e2)return toast((e1||e2).message);S.p=p;S.gs=(mm||[]).map(x=>({...x.groups,role:x.role}));S.g=S.gs.find(x=>x.id===localStorage.cpg)||S.gs[0]||null;S.groupCounts={};if(S.gs.length){let ids=S.gs.map(g=>g.id),{data:gm,error:ge}=await sb.from('group_members').select('group_id').in('group_id',ids);if(!ge)(gm||[]).forEach(x=>S.groupCounts[x.group_id]=(S.groupCounts[x.group_id]||0)+1)}$('#dn').value=p.display_name||'';$('#pn').value=p.partner_name||'';$('#onboard').classList.toggle('hide',!!S.g);$('#nav').classList.toggle('hide',!S.g);$$('[data-panel]').forEach(x=>x.classList.toggle('hide',!S.g||x.dataset.panel!=='home'));if(S.g){await group();applyRequestedTab()}else await refreshPushStatus()}
 async function group(){localStorage.cpg=S.g.id;let[a,b,c,d,e,f]=await Promise.all([sb.from('group_members').select('user_id,role,profiles(id,display_name,partner_name)').eq('group_id',S.g.id),sb.from('chores').select('*,profiles(id,display_name)').eq('group_id',S.g.id).order('created_at',{ascending:false}),sb.from('votes').select('id,chore_id,voter_id,reward_id,created_at,rewards(id,title,emoji,owner_id)'),sb.from('app_suggestions').select('id,group_id,submitted_by,suggestion,status,created_at,profiles(display_name)').eq('group_id',S.g.id).order('created_at',{ascending:false}),sb.from('chore_reward_options').select('chore_id,reward_id,position'),sb.from('tab_checkins').select('tab,seen_at').eq('user_id',S.u.id).eq('group_id',S.g.id)]);for(let z of[a,b,c,d,e,f])if(z.error)return toast(z.error.message);S.ms=a.data||[];S.cs=b.data||[];S.ps=S.cs.filter(ch=>ch.user_id===S.u.id&&ch.is_future);S.vs=(c.data||[]).filter(v=>S.cs.some(ch=>ch.id===v.chore_id));S.sugs=d.data||[];S.cros=(e.data||[]).filter(o=>S.cs.some(ch=>ch.id===o.chore_id));S.seen={vote:null,past:null};(f.data||[]).forEach(x=>S.seen[x.tab]=x.seen_at);await ensureCheckins();let ids=S.ms.map(m=>m.user_id),rr=ids.length?await sb.from('rewards').select('*').in('owner_id',ids).order('sort_order'):({data:[],error:null});if(rr.error)return toast(rr.error.message);S.allRs=rr.data||[];S.rs=S.allRs.filter(r=>r.owner_id===S.u.id);render();void refreshPushStatus();notifyClosedChores()}
 function render(){let mine=S.cs.filter(c=>c.user_id===S.u.id);$('#sc').textContent=mine.length;$('#sv').textContent=S.vs.filter(v=>mine.some(c=>c.id===v.chore_id)).length;$('#sm').textContent=S.ms.length;renderVoteMine();renderQueue();renderPast();renderChoreRewardPicker();renderPlanned();renderBadges();renderGroupManager();renderSuggestions()}
@@ -200,7 +215,16 @@ $('#planRewardChips').onclick=e=>{let b=e.target.closest('[data-plan-remove]');i
 $('#planform').onsubmit=async e=>{e.preventDefault();let title=$('#pt').value.trim();if(!title)return toast('Add a chore first');let rewardIds=[...S.planSel].filter(id=>S.rs.some(r=>r.id===id));if(rewardIds.length<3)return toast('Choose at least 3 rewards');if(rewardIds.length>5)return toast('Choose no more than 5 rewards');let{data:newChoreId,error}=await sb.rpc('create_future_chore_with_rewards',{p_group_id:S.g.id,p_title:title,p_effort:$('#pe').value,p_reward_ids:rewardIds});if(error)return toast(error.message);$('#pt').value='';S.planSel=new Set();toast('Up Next is open for voting');if(newChoreId)void firePush('new_chore',newChoreId);await group()};
 $('#plannedList').onclick=async e=>{let del=e.target.closest('[data-plan-delete]'),done=e.target.closest('[data-plan-done]');if(del){if(!confirm('Remove this future chore?'))return;let{error}=await sb.from('chores').delete().eq('id',del.dataset.planDelete).eq('is_future',true);if(error)return toast(error.message);toast('Removed from Up Next');await group();return}if(done){let{error}=await sb.rpc('complete_future_chore',{p_chore_id:done.dataset.planDone});if(error)return toast(error.message);toast('Done! Final voting is open for 12 hours.');await group()}};
 
-$('#magic').onclick=async()=>{let email=$('#email').value.trim();if(!email)return;$('#magic').disabled=true;let{error}=await sb.auth.signInWithOtp({email,options:{emailRedirectTo:location.origin}});$('#magic').disabled=false;$('#authmsg').textContent=error?error.message:'Check your email and tap the sign-in link.'};
+let pendingAuthEmail='';
+function showEmailStep(){pendingAuthEmail='';$('#emailStep').classList.remove('hide');$('#codeStep').classList.add('hide');$('#otp').value='';$('#authmsg').textContent='No password needed. We’ll send a 6-digit code.'}
+function showCodeStep(email){pendingAuthEmail=email;$('#emailStep').classList.add('hide');$('#codeStep').classList.remove('hide');$('#codeSentTo').textContent='Code sent to '+email;$('#codemsg').textContent='Enter the code from the newest ChorePlay email.';setTimeout(()=>$('#otp').focus(),80)}
+async function sendOtpCode(email){if(!email)return;$('#sendOtp').disabled=true;$('#resendOtp').disabled=true;let{error}=await sb.auth.signInWithOtp({email,options:{shouldCreateUser:true}});$('#sendOtp').disabled=false;$('#resendOtp').disabled=false;if(error){$('#authmsg').textContent=error.message;$('#codemsg').textContent=error.message;return}showCodeStep(email)}
+$('#sendOtp').onclick=async()=>{let email=$('#email').value.trim().toLowerCase();if(!email)return $('#authmsg').textContent='Enter your email address first.';await sendOtpCode(email)};
+$('#verifyOtp').onclick=async()=>{let token=$('#otp').value.replace(/\D/g,'').slice(0,6);if(!pendingAuthEmail)return showEmailStep();if(token.length!==6)return $('#codemsg').textContent='Enter the 6-digit code from your email.';$('#verifyOtp').disabled=true;$('#codemsg').textContent='Signing you in…';let{error}=await sb.auth.verifyOtp({email:pendingAuthEmail,token,type:'email'});$('#verifyOtp').disabled=false;if(error){$('#codemsg').textContent='That code did not work. Use the newest code or send another one.';return}$('#codemsg').textContent='Signed in.'};
+$('#otp').addEventListener('input',e=>{e.target.value=e.target.value.replace(/\D/g,'').slice(0,6);if(e.target.value.length===6)$('#codemsg').textContent='Ready to sign in.'});
+$('#otp').addEventListener('keydown',e=>{if(e.key==='Enter')$('#verifyOtp').click()});
+$('#resendOtp').onclick=async()=>{if(!pendingAuthEmail)return;$('#codemsg').textContent='Sending a new code…';await sendOtpCode(pendingAuthEmail)};
+$('#changeEmail').onclick=()=>showEmailStep();
 $('#out').onclick=()=>sb.auth.signOut();
 
 function showTab(tab){S.tab=tab;$$('#nav button').forEach(x=>x.classList.toggle('on',x.dataset.tab===tab));$$('[data-panel]').forEach(x=>x.classList.toggle('hide',x.dataset.panel!==tab));}
